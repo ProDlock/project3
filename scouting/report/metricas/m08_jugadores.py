@@ -115,7 +115,7 @@ def jugadores(ctx):
             return {"type": "unavailable", "title": title, "reason": "No positions after minute 10."}
         return {"type": "map", "title": title, "n": a["heat_n"],
                 "note": "Alive positions sampled every 5 s from minute 10 to the end, own base at the bottom (normalized).",
-                "grid": GRID, "normalized": True, "layers": [{"kind": "heat", "points": a["heat"]}]}
+                "grid": GRID, "normalized": True, "layers": [{"kind": "heat", "name": "Positions after minute 10", "points": a["heat"]}]}
 
     for a in players[:MAX_MAPAS]:
         nr = sum(1 for p, _ in a["items"] if p["kills_rest"] is not None)
@@ -123,5 +123,5 @@ def jugadores(ctx):
                    zonas(a, a["drc"], "zones where they die most (without objective fights)", "them", nr),
                    zonas(a, a["krc"], "zones where they kill most (without objective fights)", "us", nr), heat(a)]
     if len(players) > MAX_MAPAS:
-        blocks.append({"type": "text", "tone": "info", "text": f"Zone maps only for the {MAX_MAPAS} players with most matches."})
+        blocks.append({"type": "text", "tone": "info", "text": f"Zone and heat maps only for the {MAX_MAPAS} players with most matches."})
     return blocks

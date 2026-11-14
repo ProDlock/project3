@@ -85,14 +85,16 @@ def heat_points(mi, slot, t_from=600, step_s=5, rotate=False, dec=None):
     rotate=True gira 180° (-x, -y) para dejar la base propia abajo (equipo 1). `dec` = decode_positions ya calculado."""
     dec = dec or matches.decode_positions(mi)
     iv = dec.get("interval_s") or 1
-    stride = max(1, round(step_s / iv))
-    i0 = -(-t_from // iv)
     sg = -1 if rotate else 1
     for p in dec["players"]:
         if p["slot"] != slot:
             continue
-        out = []
-        for i in range(int(i0), min(len(p["x"]), len(p["y"])), stride):
+        out, last = [], None
+        for i in range(min(len(p["x"]), len(p["y"]))):
+            t = i * iv
+            if t < t_from or (last is not None and t - last < step_s):
+                continue
+            last = t
             x, y = p["x"][i], p["y"][i]
             if x is not None and y is not None:
                 out.append([sg * round(x), sg * round(y)])

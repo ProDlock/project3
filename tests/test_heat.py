@@ -44,6 +44,18 @@ class HeatPoints(unittest.TestCase):
             self.assertTrue(b["layers"][0]["points"])
             self.assertTrue(b["title"].startswith("Position heat after minute 10"))
 
+    def test_m08_unavailable_when_no_positions(self):
+        mi = copy.deepcopy(self.mi)
+        for q in mi["match_paths"]["paths"]:
+            for k in ("x_pos", "y_pos", "health"):
+                q[k] = (q.get(k) or [])[:300]
+        roster = {p["account_id"] for p in mi["players"] if p["team"] == 1}
+        out = report.run("T", [{"match_info": mi}], roster, None, None, None, hero_names={})
+        sec = {s["id"]: s for s in out["sections"]}["jugadores"]
+        un = [b for b in sec["blocks"] if b.get("type") == "unavailable" and b["title"].startswith("Position heat")]
+        self.assertEqual(len(un), 6)
+        self.assertEqual(un[0]["reason"], "No positions after minute 10.")
+
 
 if __name__ == "__main__":
     unittest.main()
