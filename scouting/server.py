@@ -558,7 +558,7 @@ class App:
             name = (r["n"] if r and r["n"] else None) or (sp["personaname"] if sp and sp["personaname"] else None)
             if r or name:
                 player_ids[aid] = {"player_id": r["pid"] if r else None, "name": name}
-        out = report.run(team or "Plantilla manual", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries,
+        out = report.run(team or "Manual roster", datas, roster, body.get("side_overrides"), body.get("params"), demo_summaries,
                          lane_data=lane_data, player_ids=player_ids, hero_names=self._hero_names())
         out["load_errors"] = errors
         out["roster_size"] = len(roster)

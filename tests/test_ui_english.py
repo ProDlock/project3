@@ -15,7 +15,7 @@ WORDS = ["partidas", "partida", "jugador", "jugadores", "muertes", "muerte", "eq
 SPANISH = re.compile(r"(?<![\w-])(" + "|".join(re.escape(w) for w in WORDS) + r")(?![\w-])", re.I)
 # mensajes de backend: además, giros típicos de los errores
 BACKEND = re.compile(SPANISH.pattern[:-len(r")(?![\w-])")] +
-                     r"|no válid[oa]|debe ser|demasiado|falta|redirección|sin respuesta|no existe|no se |encontrad|permitid|interno|grande|imagen)(?![\w-])", re.I)
+                     r"|plantilla|no válid[oa]|debe ser|demasiado|falta|redirección|sin respuesta|no existe|no se |encontrad|permitid|interno|grande|imagen)(?![\w-])", re.I)
 IGNORE_MARK = "es-ok"  # línea con /* es-ok */: valores heredados a propósito (rutas antiguas)
 
 
@@ -108,7 +108,7 @@ class UiEnglish(unittest.TestCase):
             self.assertIn('<html lang="en">', f.read())
 
     def test_backend_messages_are_english(self):
-        names = {"HttpError", "ApiError", "ValueError", "KeyError", "DemoError", "MatchError", "HTTPError", "_error"}
+        names = {"HttpError", "ApiError", "ValueError", "KeyError", "DemoError", "MatchError", "HTTPError", "_error", "run"}
         hits = []
         for fname in ("server.py", "api.py", "demo.py", "players.py", "teams.py", "minimap.py", "analysis.py", "updater.py"):
             path = os.path.join(SCOUTING, fname)

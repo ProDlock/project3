@@ -153,7 +153,7 @@ export function renderBlock(b) {
       const wrap = el('div', { class: 'block' }, title(b.title, b.n));
       const leg = [];
       const layers = b.layers.map(L => {
-        const color = (L.side && SIDE_COLORS[L.side]) || SIDE_COLORS.neutral;
+        const color = L.color || (L.side && SIDE_COLORS[L.side]) || (L.kind === 'heat' ? SIDE_COLORS.us : SIDE_COLORS.neutral);
         if (L.kind !== 'cells') leg.push([color, L.name, L.kind === 'crosses' ? 'x' : null]);
         else leg.push([SIDE_COLORS.us, 'positive balance'], [SIDE_COLORS.them, 'negative balance']);
         return { ...L, color, radius: L.radius || (L.kind === 'heat' ? 12 : L.kind === 'points' ? 4 : 5) };
