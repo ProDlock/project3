@@ -532,6 +532,29 @@ function jugadores(root, m, tname) {
     return el('div', { class: 'pj-map' }, el('h4', {}, `${title} (${cells.reduce((a, c) => a + c[2], 0)})`), box,
       cells.length ? null : el('p', { class: 'muted small' }, 'None with a position.'));
   }
+  // positions of the whole match, fetched once (on the first player selected) and cached for this tab view
+  let posPromise = null;
+  const loadPositions = () => posPromise || (posPromise = api.get(`/api/matches/${m.match_id}/positions?step=2`).catch(e => { posPromise = null; throw e; }));
+  const HEAT_FROM_S = 600;
+  function heatMap(player, color) {
+    const title = 'Position heat (after min 10)';
+    const body = el('div', {}, spinner('Decoding positions…'));
+    const wrap = el('div', { class: 'pj-map' }, el('h4', {}, title), body);
+    loadPositions().then(pos => {
+      if (sel !== player || !wrap.isConnected) return; // another player/tab/match in the meantime
+      const step = pos.interval_s || 2;
+      const p = (pos.players || []).find(q => q.slot === player.slot);
+      const pts = [];
+      if (p) for (let i = Math.ceil(HEAT_FROM_S / step); i < p.x.length; i++) if (p.x[i] != null && p.y[i] != null) pts.push([p.x[i], p.y[i]]);
+      if (!pts.length) { body.replaceWith(el('p', { class: 'muted small' }, 'Not available: no positions after minute 10')); return; }
+      const box = el('div');
+      const map = new MapView(box, { size: 380, label: title });
+      // raw world points: team 1 is shown with the whole map rotated 180°, like its kill/death maps
+      map.ready.then(() => map.setLayers([{ kind: 'heat', points: pts, color, radius: 12 }], { rotate: player.team === 1 }));
+      body.replaceWith(box);
+    }).catch(e => { if (sel === player && wrap.isConnected) body.replaceWith(el('p', { class: 'muted small' }, `Not available: could not load the positions (${e.message})`)); });
+    return wrap;
+  }
   function showPlayer() {
     detail.innerHTML = '';
     if (!sel) return;
@@ -541,6 +564,7 @@ function jugadores(root, m, tname) {
     detail.append(el('h3', {}, sel.pl ? portrait(sel.pl, { size: 'sm', shape: 'round' }) : null, ` ${sel.hero} · ${sel.pname || '—'} `, laneCell(sel)),
       el('p', { class: 'muted small' }, 'Maps with the player’s own base at the bottom. Kills = where the opponent died; deaths = where the player died.'),
       el('div', { class: 'grid2' }, cellMap('Kills', sel.kill_cells || [], sel.team, color), cellMap('Deaths', sel.death_cells || [], sel.team, color)),
+      el('div', { class: 'grid2' }, heatMap(sel, color)),
       el('h4', {}, 'Without Midboss and KOTH fights'),
       el('p', { class: 'muted small' }, sel.fights
         ? `Counts by fight type (kills / deaths): midboss ${sel.fights.kills.midboss} / ${sel.fights.deaths.midboss}, KOTH ${sel.fights.kills.koth} / ${sel.fights.deaths.koth}, rest ${sel.fights.kills.rest} / ${sel.fights.deaths.rest}, no position ${sel.fights.kills.unknown} / ${sel.fights.deaths.unknown}. Events without a position are left off the maps.`

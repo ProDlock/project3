@@ -68,6 +68,7 @@ Base `https://api.deadlock-api.com` · Docs OpenAPI en `/docs` · API key opcion
 | `GET /v1/players/{id}/mmr-history` | Historial de MMR | Marcado como obsoleto, ~20 req/min, da puntos y no posición. No usar para climbers. |
 | `POST /v1/matches/demo/query` + `GET /v1/matches/demo/query/{job_id}` | Consultas SQL sobre el demo de una partida | **Verificado (2026-11-12)**. Cuerpo `{match_id, query, format: "ndjson"}`; estados queued/running/done/failed; con `done`, `result_url` en el host **`demo-extracts.deadlock-api.com`** (`.ndjson.zst`, exige `User-Agent`, si no 403). Límite 200/h por IP (la app usa 150/h). Disponible para partidas de oct–nov 2026; 404 «No demo available» en partidas antiguas (p. ej. la 109084310). Tablas sin comillas, **columnas con mayúsculas entre comillas dobles**; `CCitadelGameRulesProxy` con columnas `m_pGameRules__…`. Esquema: `GET /v1/matches/demo/schema?match_id=`. |
 | `GET /v1/matches/{id}/metadata` | Partida completa (~1,3 MB) | **Verificado** con la partida `109084310`. Límite "from S3" 100 req/10 s. |
+- **Mapa de calor por jugador desde el minuto 10**: la pestaña «Players» de una partida (tercer mapa «Position heat (after min 10)», con las posiciones de `/positions?step=2`, jugador vivo y t ≥ 600 s, girado 180° para el equipo 1) y la sección Players del informe muestran dónde estuvo cada jugador tras la fase de líneas. Spec: `docs/superpowers/specs/2026-11-14-mapa-calor-jugador-design.md`.
 
 Statlocker no tiene API pública útil; usa los mismos datos.
 
