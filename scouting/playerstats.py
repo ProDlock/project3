@@ -77,3 +77,24 @@ def player_stats(mi, lane_phase_result, cal=None, fights=None):
             "lane_deaths": l.get("deaths"), "lane_kills": l.get("kills"),
         })
     return out
+
+
+def heat_points(mi, slot, t_from=600, step_s=5, rotate=False, dec=None):
+    """Posiciones vivas del jugador desde t_from (s), una cada step_s segundos, como [x, y] enteros.
+
+    rotate=True gira 180° (-x, -y) para dejar la base propia abajo (equipo 1). `dec` = decode_positions ya calculado."""
+    dec = dec or matches.decode_positions(mi)
+    iv = dec.get("interval_s") or 1
+    stride = max(1, round(step_s / iv))
+    i0 = -(-t_from // iv)
+    sg = -1 if rotate else 1
+    for p in dec["players"]:
+        if p["slot"] != slot:
+            continue
+        out = []
+        for i in range(int(i0), min(len(p["x"]), len(p["y"])), stride):
+            x, y = p["x"][i], p["y"][i]
+            if x is not None and y is not None:
+                out.append([sg * round(x), sg * round(y)])
+        return out
+    return []

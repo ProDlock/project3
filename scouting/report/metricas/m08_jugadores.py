@@ -3,6 +3,7 @@ from collections import Counter
 
 from .. import GRID, cell_name, metric
 from ... import matches as M
+from ... import playerstats
 from .m07_fase_lineas import _tied_max
 
 MAX_MAPAS = 12
@@ -33,8 +34,12 @@ def jugadores(ctx):
             ident = ctx.player_ids.get(p["account_id"])
             key = ("p", ident["player_id"]) if ident and ident.get("player_id") is not None else ("a", p["account_id"])
             a = acc.setdefault(key, {"account_id": p["account_id"], "name": (ident or {}).get("name") or f"Account {p['account_id']}",
-                                      "items": [], "heroes": Counter(), "lanes": Counter(), "kc": Counter(), "dc": Counter(), "krc": Counter(), "drc": Counter()})
+                                      "items": [], "heroes": Counter(), "lanes": Counter(), "kc": Counter(), "dc": Counter(), "krc": Counter(), "drc": Counter(), "heat": [], "heat_n": 0})
             a["items"].append((p, demo))
+            pts = playerstats.heat_points(m.mi, p["slot"], rotate=m.our == 1, dec=m.positions)
+            if pts:
+                a["heat"] += pts
+                a["heat_n"] += 1
             a["heroes"][p["hero_id"]] += 1
             if p["lane"] is not None:
                 a["lanes"][p["lane"]] += 1
@@ -104,11 +109,19 @@ def jugadores(ctx):
                 "columns": [{"key": "zona", "label": "Zone (see map)"}, {"key": "eventos", "label": "Total", "bar": True}],
                 "rows": [{"zona": cell_name(c), "eventos": v} for c, v in top]}
 
+    def heat(a):
+        title = f"Position heat after minute 10 — {a['name']}"
+        if not a["heat_n"]:
+            return {"type": "unavailable", "title": title, "reason": "No positions after minute 10."}
+        return {"type": "map", "title": title, "n": a["heat_n"],
+                "note": "Alive positions sampled every 5 s from minute 10 to the end, own base at the bottom (normalized).",
+                "grid": GRID, "normalized": True, "layers": [{"kind": "heat", "points": a["heat"]}]}
+
     for a in players[:MAX_MAPAS]:
         nr = sum(1 for p, _ in a["items"] if p["kills_rest"] is not None)
         blocks += [zonas(a, a["dc"], "zones where they die most", "them"), zonas(a, a["kc"], "zones where they kill most", "us"),
                    zonas(a, a["drc"], "zones where they die most (without objective fights)", "them", nr),
-                   zonas(a, a["krc"], "zones where they kill most (without objective fights)", "us", nr)]
+                   zonas(a, a["krc"], "zones where they kill most (without objective fights)", "us", nr), heat(a)]
     if len(players) > MAX_MAPAS:
         blocks.append({"type": "text", "tone": "info", "text": f"Zone maps only for the {MAX_MAPAS} players with most matches."})
     return blocks

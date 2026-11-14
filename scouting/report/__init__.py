@@ -64,6 +64,7 @@ class MatchCtx:
         self._lane_phase = None
         self._player_stats = None
         self._fights = None
+        self._positions = None
 
     @property
     def demo(self):
@@ -87,6 +88,13 @@ class MatchCtx:
             from .. import playerstats
             self._player_stats = playerstats.player_stats(self.mi, self.lane_phase, cal=self._calibration, fights=self.fights)
         return self._player_stats
+
+    @property
+    def positions(self):
+        """decode_positions de la partida, calculado una sola vez."""
+        if self._positions is None:
+            self._positions = M.decode_positions(self.mi)
+        return self._positions
 
     @property
     def fights(self):
