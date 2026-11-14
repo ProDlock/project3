@@ -29,6 +29,21 @@ export function resetMapInfo() { mapInfoPromise = null; }
 export const COLORS = SIDE_COLORS;
 const ink = () => cssVar('--mapink', '#000');
 
+// Paleta clásica de mapa de calor (v en 0..1): azul → cian → verde → amarillo → rojo.
+const HEAT_STOPS = [[0, [40, 60, 255]], [0.25, [0, 200, 255]], [0.5, [40, 220, 60]], [0.75, [255, 230, 0]], [1, [235, 30, 20]]];
+export const HEAT_LEGEND_BG = 'linear-gradient(90deg, rgb(40,60,255), rgb(0,200,255), rgb(40,220,60), rgb(255,230,0), rgb(235,30,20))';
+export function heatColor(v) {
+  v = Math.max(0, Math.min(1, v));
+  for (let i = 1; i < HEAT_STOPS.length; i++) {
+    const [t1, c1] = HEAT_STOPS[i];
+    if (v <= t1) {
+      const [t0, c0] = HEAT_STOPS[i - 1], f = (v - t0) / (t1 - t0);
+      return c0.map((x, k) => Math.round(x + (c1[k] - x) * f));
+    }
+  }
+  return HEAT_STOPS[HEAT_STOPS.length - 1][1];
+}
+
 export class MapView {
   constructor(container, opts = {}) {
     this.size = opts.size || 760;
@@ -136,11 +151,14 @@ export class MapView {
     if (!max) return;
     const off = document.createElement('canvas'); off.width = off.height = n;
     const octx = off.getContext('2d'), img = octx.createImageData(n, n);
+    // L.mono: un solo color (el del equipo, p. ej. en el minimapa con los dos equipos a la vez);
+    // si no, paleta clásica de mapa de calor: azul → cian → verde → amarillo → rojo.
     const c = parseInt((L.color || COLORS.neutral).slice(1), 16);
     for (let k = 0; k < n * n; k++) {
       const v = Math.sqrt(d[k] / max); // raíz: que se vean también las zonas poco visitadas
-      img.data[k * 4] = (c >> 16) & 255; img.data[k * 4 + 1] = (c >> 8) & 255; img.data[k * 4 + 2] = c & 255;
-      img.data[k * 4 + 3] = v < 0.04 ? 0 : Math.round(235 * v);
+      const [r, g, b] = L.mono ? [(c >> 16) & 255, (c >> 8) & 255, c & 255] : heatColor(v);
+      img.data[k * 4] = r; img.data[k * 4 + 1] = g; img.data[k * 4 + 2] = b;
+      img.data[k * 4 + 3] = v < 0.04 ? 0 : Math.round(L.mono ? 235 * v : 70 + 175 * v);
     }
     octx.putImageData(img, 0, 0);
     ctx.save(); ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, S, S); ctx.restore();

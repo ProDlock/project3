@@ -1,7 +1,7 @@
 // Render genérico de bloques del informe. La web NO conoce las métricas: solo los tipos de bloque.
 import { el, dataTable, formatValue } from './util.js';
 import { bars, histogram, timeline, SIDE_COLORS } from './charts.js';
-import { MapView, legend } from './map.js';
+import { MapView, legend, HEAT_LEGEND_BG } from './map.js';
 import { heroPortrait, laneChip, laneStyle, objectiveImg } from './art.js';
 
 // Carriles del informe ({id:{nombre,color,alias}}): los fija la vista del informe antes de pintar las secciones.
@@ -154,7 +154,8 @@ export function renderBlock(b) {
       const leg = [];
       const layers = b.layers.map(L => {
         const color = L.color || (L.side && SIDE_COLORS[L.side]) || (L.kind === 'heat' ? SIDE_COLORS.us : SIDE_COLORS.neutral);
-        if (L.kind !== 'cells') leg.push([color, L.name, L.kind === 'crosses' ? 'x' : null]);
+        if (L.kind === 'heat' && !L.mono) leg.push([HEAT_LEGEND_BG, `${L.name} (blue = little time, red = most time)`]);
+        else if (L.kind !== 'cells') leg.push([color, L.name, L.kind === 'crosses' ? 'x' : null]);
         else leg.push([SIDE_COLORS.us, 'positive balance'], [SIDE_COLORS.them, 'negative balance']);
         return { ...L, color, radius: L.radius || (L.kind === 'heat' ? 12 : L.kind === 'points' ? 4 : 5) };
       });

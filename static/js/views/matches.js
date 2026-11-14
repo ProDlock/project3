@@ -1,6 +1,6 @@
 import { api, getHeroes } from '../api.js';
 import { el, fmt, formatValue, dataTable, toast, spinner, csvDownload, store, errorBox } from '../util.js';
-import { MapView, COLORS, legend, loadMapInfo } from '../map.js';
+import { MapView, COLORS, legend, loadMapInfo, HEAT_LEGEND_BG } from '../map.js';
 import { timeline } from '../charts.js';
 import { renderExplorer } from './explorer.js';
 import { openProfile } from './profile.js';
@@ -551,7 +551,7 @@ function jugadores(root, m, tname) {
       const map = new MapView(box, { size: 380, label: title });
       // raw world points: team 1 is shown with the whole map rotated 180°, like its kill/death maps
       map.ready.then(() => map.setLayers([{ kind: 'heat', points: pts, color, radius: 12 }], { rotate: player.team === 1 }));
-      body.replaceWith(box);
+      body.replaceWith(el('div', {}, legend([[HEAT_LEGEND_BG, 'blue = little time, red = most time']]), box));
     }).catch(e => { if (sel === player && wrap.isConnected) body.replaceWith(el('p', { class: 'muted small' }, `Not available: could not load the positions (${e.message})`)); });
     return wrap;
   }
@@ -662,7 +662,7 @@ async function minimapa(root, m, tname) {
         for (let i = Math.floor(t0 / step); i < Math.min(p.x.length, t1 / step); i++) if (p.x[i] != null) pts.push([p.x[i], p.y[i]]);
       }
       n += pts.length;
-      layers.push({ kind: 'heat', points: pts, color: team ? COLORS.t1 : COLORS.t0, radius: 12 });
+      layers.push({ kind: 'heat', points: pts, color: team ? COLORS.t1 : COLORS.t0, radius: 12, mono: true });
     }
     // “without objective fights” can only be computed with the demo (otherwise the KOTH cannot be identified)
     const fx = m.fights, labels = fx?.koth_known && fx.labels?.length === m.deaths.length ? fx.labels : null;
