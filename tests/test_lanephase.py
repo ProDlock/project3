@@ -593,6 +593,27 @@ class ReportLanes(unittest.TestCase):
                 tot += r["total"]
             self.assertEqual(tot, 3 * sum(1 for g in ganks if g["team"] == team))
 
+    def test_gank_detail_zero_row_for_lane_without_ganks(self):
+        """Determinista: se quitan los gankeos de una línea y debe seguir habiendo su fila con ceros."""
+        from unittest import mock
+        from scouting import report
+        real = lanephase.lane_phase
+        lane = self.lp["ganks"][0]["lane"]
+
+        def sin_lane(*a, **k):
+            res = real(*a, **k)
+            if res.get("ganks") is not None:
+                res["ganks"] = [g for g in res["ganks"] if g["lane"] != lane]
+            return res
+        with mock.patch.object(lanephase, "lane_phase", sin_lane):
+            out = report.run("T", [self.data], self.roster, None, None, None, lane_data=self.ld, hero_names={})
+        blocks = {s["id"]: s for s in out["sections"]}["fase_lineas"]["blocks"]
+        for kind in ("ganks_made_detail", "ganks_suffered_detail"):
+            row = next(r for b in blocks if b.get("kind") == kind for r in b["rows"] if r["carril_id"] == lane)
+            self.assertEqual([row[k] for k in ("total", "from_1", "from_3", "from_4", "m1_3", "m3_5", "m5_7", "m7_10", "kills")], [0] * 9)
+            self.assertIsNone(row["heroes"])
+            self.assertEqual(row["hero_ids"], [])
+
     def test_gank_detail_absent_without_demo(self):
         sec = self._mixed(0, 2)
         for k in ("ganks_made_detail", "ganks_suffered_detail"):
