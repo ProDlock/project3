@@ -184,10 +184,12 @@ class LanePhase(unittest.TestCase):
         self.assertEqual(g("4", "0", "first_gank_made"), {"t": 235, "attacker_slot": 1, "victim_slot": 8, "kind": "dano"})
         self.assertEqual(g("4", "1", "first_gank_made"), {"t": 250, "attacker_slot": 9, "victim_slot": 6, "kind": "dano"})
         self.assertEqual(g("1", "0", "first_gank_made"), {"t": 400, "attacker_slot": 2, "victim_slot": 7, "kind": "kill"})
-        self.assertEqual(g("1", "1", "first_gank_made"), {"t": 295, "attacker_slot": 12, "victim_slot": 5, "kind": "dano"})
+        # el episodio del slot 12 sobre la línea 1 (t 295) no llega a 200 de daño: ya no cuenta como gankeo
+        self.assertIsNone(g("1", "1", "first_gank_made"))
         self.assertEqual(g("3", "0", "first_gank_made"), {"t": 265, "attacker_slot": 3, "victim_slot": 9, "kind": "dano"})
         self.assertEqual(g("3", "1", "first_gank_made"), {"t": 265, "attacker_slot": 10, "victim_slot": 1, "kind": "dano"})
         self.assertEqual(g("1", "1", "first_gank_suffered"), g("1", "0", "first_gank_made"))
+        self.assertEqual(g("1", "0", "first_gank_suffered"), g("1", "1", "first_gank_made"))
 
     def test_tie_prefers_kill(self):
         dano = {"t": 100, "attacker_slot": 1, "victim_slot": 2, "kind": "dano"}
@@ -246,6 +248,105 @@ class LanePhase(unittest.TestCase):
         self.assertIsNone(done[slot])
         self.assertIsNone(taken[slot])
         self.assertIsNone(lanephase.lane_phase(mi)["players"][str(slot)]["dmg_done"])
+
+
+class LaneGanks(unittest.TestCase):
+    """Lista de gankeos con demo sintético sobre la partida real (sin muertes reales)."""
+
+    def setUp(self):
+        self.mi = _mi()
+        for p in self.mi["players"]:
+            p["death_details"] = []
+        self.rules = _load("demo_135801973.json")["results"]["rules"]
+        self.acc = {p["player_slot"]: p["account_id"] for p in self.mi["players"]}
+        self.team = {p["player_slot"]: p["team"] for p in self.mi["players"]}
+        self.lane = {s: ESPERADO[a] for s, a in self.acc.items()}
+        t0 = sorted(s for s in self.team if self.team[s] == 0)
+        t1 = sorted(s for s in self.team if self.team[s] == 1)
+        self.a1 = next(s for s in t0 if self.lane[s] == 1)
+        self.a3 = next(s for s in t0 if self.lane[s] == 3)
+        self.vics = [s for s in t1 if self.lane[s] == 4]
+
+    def _b(self, t):
+        """Índice b cuyo segundo de partida es el primero >= t."""
+        b = 0
+        while demo.game_seconds_from_tick(b * 320, self.rules) < t:
+            b += 1
+        return b
+
+    def _row(self, t, att, vic, dmg):
+        return {"att": self.acc[att], "vic": self.acc[vic], "b": self._b(t), "dmg": dmg}
+
+    def _kill(self, t, killer, victim):
+        p = next(p for p in self.mi["players"] if p["player_slot"] == victim)
+        p["death_details"].append({"game_time_s": t, "killer_player_slot": killer})
+
+    def _run(self, rows):
+        return lanephase.lane_phase(self.mi, rows, self.rules)
+
+    def test_below_threshold_is_not_a_gank(self):
+        v = self.vics[0]
+        res = self._run([self._row(100, self.a1, v, 100), self._row(105, self.a1, v, 99)])
+        self.assertEqual(res["ganks"], [])
+        self.assertIsNone(res["lanes"]["4"]["1"]["first_gank_suffered"])
+        self.assertIsNone(res["lanes"]["4"]["0"]["first_gank_made"])
+        self.assertEqual(res["players"][str(self.a1)]["ganks_made"], 0)
+        self.assertEqual(res["players"][str(v)]["ganks_suffered"], 0)
+
+    def test_threshold_makes_a_gank(self):
+        v = self.vics[0]
+        res = self._run([self._row(100, self.a1, v, 100), self._row(105, self.a1, v, 100)])
+        self.assertEqual(len(res["ganks"]), 1)
+        g = res["ganks"][0]
+        self.assertEqual((g["lane"], g["team"], g["dmg"], g["kills"], g["victims"]), (4, 0, 200, 0, [v]))
+        self.assertEqual(g["gankers"], [{"slot": self.a1, "hero_id": next(
+            p["hero_id"] for p in self.mi["players"] if p["player_slot"] == self.a1),
+            "from_lane": 1, "dmg": 200, "kills": 0}])
+        first = res["lanes"]["4"]["0"]["first_gank_made"]
+        self.assertEqual(first["attacker_slot"], self.a1)
+        self.assertEqual(first, res["lanes"]["4"]["1"]["first_gank_suffered"])
+        self.assertEqual(res["players"][str(self.a1)]["ganks_made"], 1)
+        self.assertEqual(res["players"][str(v)]["ganks_suffered"], 1)
+
+    def test_kill_without_damage_is_a_gank(self):
+        v = self.vics[0]
+        self._kill(150, self.a1, v)
+        res = self._run([self._row(100, self.a3, self.vics[1], 5)])
+        kills = [g for g in res["ganks"] if g["kills"]]
+        self.assertEqual(len(kills), 1)
+        self.assertEqual(kills[0]["kills"], 1)
+        self.assertEqual(kills[0]["dmg"], 0)
+        self.assertEqual(kills[0]["t"], 150)
+        self.assertEqual(res["lanes"]["4"]["0"]["first_gank_made"]["kind"], "kill")
+
+    def test_two_attackers_from_different_lanes_merge(self):
+        v = self.vics[0]
+        res = self._run([self._row(100, self.a1, v, 150), self._row(105, self.a1, v, 150),
+                         self._row(120, self.a3, v, 250)])
+        self.assertEqual(len(res["ganks"]), 1)
+        g = res["ganks"][0]
+        self.assertEqual({x["slot"]: x["from_lane"] for x in g["gankers"]}, {self.a1: 1, self.a3: 3})
+        self.assertEqual(g["dmg"], 550)
+        self.assertEqual(g["t"], self.a_t(res, 100))
+        self.assertGreaterEqual(g["t_end"], g["t"])
+
+    def a_t(self, res, t):
+        return round(demo.game_seconds_from_tick(self._b(t) * 320, self.rules))
+
+    def test_same_attacker_40s_apart_is_two_ganks(self):
+        v = self.vics[0]
+        res = self._run([self._row(100, self.a1, v, 300), self._row(140, self.a1, v, 300)])
+        self.assertEqual(len(res["ganks"]), 2)
+        self.assertLess(res["ganks"][0]["t"], res["ganks"][1]["t"])
+        self.assertEqual(res["players"][str(self.a1)]["ganks_made"], 2)
+
+    def test_aprox_has_no_ganks(self):
+        self.assertIsNone(lanephase.lane_phase(self.mi)["ganks"])
+
+    def test_invalid_lanes_has_no_ganks(self):
+        paths = [p for p in lanes.load_paths() if p["lane"] != 3]
+        res = lanephase.lane_phase(self.mi, [self._row(100, self.a1, self.vics[0], 300)], self.rules, paths=paths)
+        self.assertIsNone(res["ganks"])
 
 
 class PlayerStats(unittest.TestCase):
