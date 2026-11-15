@@ -95,7 +95,7 @@ export async function render(root, ctx) {
           return sel;
         } },
       ], sideRows),
-      el('button', { onclick: run }, 'Recalculate with these sides')));
+      el('button', { class: 'no-export', onclick: run }, 'Recalculate with these sides')));
     const toc = el('nav', { class: 'toc no-print', 'aria-label': 'Report contents' }, el('ol', {}, r.sections.map(s => el('li', {}, el('button', { type: 'button', class: 'linkbtn', onclick: () => { const t = document.getElementById('sec-' + s.id); if (t) { t.tabIndex = -1; t.scrollIntoView({ behavior: 'smooth' }); t.focus({ preventScroll: true }); } } }, s.title)))));
     head.append(toc, el('button', { class: 'no-print', onclick: () => window.print() }, 'Print / PDF'),
       el('button', { class: 'no-print', onclick: async (ev) => { const b = ev.currentTarget; b.disabled = true; try { await exportReportHtml(out, { team: r.team, n: r.n, title: `Report: ${r.team || 'extra accounts'}` }); } catch (e) { toast('Could not export: ' + e.message, true); } finally { b.disabled = false; } } }, 'Download HTML'));

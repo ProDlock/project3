@@ -107,7 +107,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     img.style.height = 'auto';
     cv.replaceWith(img);
   });
-  clone.querySelectorAll('.no-print, script, input, select, textarea').forEach(x => x.remove());
+  clone.querySelectorAll('.no-print, .no-export, script, input, select, textarea').forEach(x => x.remove());
   // los botones con contenido (cabeceras ordenables, nombres) pasan a <span> conservando hijos y clases
   clone.querySelectorAll('button').forEach(b => {
     const sp = document.createElement('span');
@@ -119,6 +119,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   clone.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
   clone.querySelectorAll('*').forEach(x => {
     for (const a of [...x.attributes]) if (/^on/i.test(a.name)) x.removeAttribute(a.name);
+    if (x.tagName === 'IMG') { x.removeAttribute('loading'); x.removeAttribute('decoding'); }
     if (x.tagName === 'A') {
       const h = x.getAttribute('href') || '';
       if (h.startsWith('/') || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(h)) x.removeAttribute('href');
