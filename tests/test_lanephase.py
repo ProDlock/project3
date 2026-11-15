@@ -571,6 +571,28 @@ class ReportLanes(unittest.TestCase):
         for _, total in found:
             self.assertEqual(total, "3")
 
+    def test_gank_detail_tables(self):
+        sec = self._mixed(3, 2)
+        ganks = self.lp["ganks"]
+        self.assertTrue(ganks)
+        for kind, team in (("ganks_made_detail", 1), ("ganks_suffered_detail", 0)):
+            t = next(b for b in sec["blocks"] if b.get("kind") == kind)
+            self.assertEqual(t["n"], 3)
+            self.assertIn("200", t["note"])
+            tot = 0
+            for r in t["rows"]:
+                esperado = 3 * sum(1 for g in ganks if g["team"] == team and g["lane"] == r["carril_id"])
+                self.assertEqual(r["total"], esperado)
+                self.assertEqual(r["m1_3"] + r["m3_5"] + r["m5_7"] + r["m7_10"], r["total"])
+                self.assertGreaterEqual(r["from_1"] + r["from_3"] + r["from_4"], r["total"])
+                tot += r["total"]
+            self.assertEqual(tot, 3 * sum(1 for g in ganks if g["team"] == team))
+
+    def test_gank_detail_absent_without_demo(self):
+        sec = self._mixed(0, 2)
+        for k in ("ganks_made_detail", "ganks_suffered_detail"):
+            self.assertFalse(any(b.get("kind") == k for b in sec["blocks"]))
+
     def test_gank_table_unavailable_without_demo(self):
         sec = self._mixed(0, 2)
         self.assertFalse(any(b.get("kind") == "ganks" for b in sec["blocks"]))

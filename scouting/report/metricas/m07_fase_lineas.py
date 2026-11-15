@@ -158,4 +158,54 @@ def fase_lineas(ctx):
                                {"key": "made_min", "label": "Earliest time", "fmt": "mmss"},
                                {"key": "made_heroes", "label": "Own heroes who gank most", "fmt": "heroes", "ids": "made_hero_ids"}],
                    "rows": grows})
+    blocks.extend(_gank_detail(ctx, ln, demo_n))
     return blocks
+
+
+# franjas de minuto [desde, hasta) en segundos; la última incluye el segundo 600
+_BANDS = (("m1_3", 60, 180), ("m3_5", 180, 300), ("m5_7", 300, 420), ("m7_10", 420, 601))
+
+
+def _gank_detail(ctx, ln, demo_n):
+    """Dos tablas con todos los gankeos (>= 200 de daño o una muerte) por línea atacada, origen y minuto."""
+    hechos, sufridos = defaultdict(list), defaultdict(list)   # carril atacado -> [(gank, hero_of)]
+    for m in ctx.matches:
+        lp = m.lane_phase
+        if not lp["valid"] or lp["source"] != "demo" or lp.get("ganks") is None:
+            continue
+        hero_of = {s: p.get("hero_id") for s, p in M.players(m.mi).items()}
+        for g in lp["ganks"]:
+            if g["team"] == m.our:
+                hechos[g["lane"]].append((g, hero_of))
+            elif g["team"] == m.their:
+                sufridos[g["lane"]].append((g, hero_of))
+    note = ("Gank = a hero from another lane deals 200+ damage or gets a kill on a player in the lane, "
+            f"between min 1 and 10. Counts only matches with demo ({demo_n}). "
+            "From = lane each ganker came from (a gank can come from two lanes). "
+            "Heroes = gankers, most frequent first.")
+    out = []
+    for kind, title, data in (("ganks_made_detail", "Ganks they make, by attacked lane", hechos),
+                              ("ganks_suffered_detail", "Ganks they suffer, by lane", sufridos)):
+        rows = []
+        for lane in sorted(data):
+            items = data[lane]
+            row = {"carril_id": lane, "total": len(items)}
+            for src in (1, 3, 4):
+                row[f"from_{src}"] = sum(1 for g, _ in items if any(k["from_lane"] == src for k in g["gankers"]))
+            for key, lo, hi in _BANDS:
+                row[key] = sum(1 for g, _ in items if lo <= g["t"] < hi)
+            row["kills"] = sum(g["kills"] for g, _ in items)
+            heroes = Counter(hero_of.get(k["slot"]) for g, hero_of in items for k in g["gankers"])
+            row["heroes"] = _top(heroes, ctx, 5)
+            row["hero_ids"] = _top_ids(heroes, 5)
+            rows.append(row)
+        out.append({"type": "table", "kind": kind, "title": title, "n": demo_n, "note": note,
+                    "columns": [{"key": "carril_id", "label": "Lane", "fmt": "lane"}, {"key": "total", "label": "Ganks", "bar": True},
+                                {"key": "from_1", "label": f"From {ln(1)}"}, {"key": "from_3", "label": f"From {ln(3)}"},
+                                {"key": "from_4", "label": f"From {ln(4)}"},
+                                {"key": "m1_3", "label": "Min 1–3"}, {"key": "m3_5", "label": "Min 3–5"},
+                                {"key": "m5_7", "label": "Min 5–7"}, {"key": "m7_10", "label": "Min 7–10"},
+                                {"key": "kills", "label": "Kills"},
+                                {"key": "heroes", "label": "Gankers", "fmt": "heroes", "ids": "hero_ids"}],
+                    "rows": rows})
+    return out
