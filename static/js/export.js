@@ -40,6 +40,32 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     }
     return cache.get(abs);
   };
+  const scaled = new Map(); // abs|T -> Promise<data: URL | null>
+  // reduce la imagen a ~2x su tamaño visible (máx. 256 px) y la codifica en WebP; los SVG se dejan tal cual
+  const fetchScaled = (abs, rect) => {
+    const T = rect && (rect.width || rect.height) ? Math.min(256, Math.ceil(Math.max(rect.width, rect.height) * 2)) : 256;
+    const key = abs + '|' + T;
+    if (!scaled.has(key)) {
+      scaled.set(key, (async () => {
+        try {
+          const r = await fetch(abs); if (!r.ok) throw new Error(r.status);
+          const blob = await r.blob();
+          if (/svg/.test(blob.type) || /\.svg(\?|$)/i.test(abs)) return await blobToDataUrl(blob);
+          const bmp = await createImageBitmap(blob);
+          const k = T / Math.max(bmp.width, bmp.height);
+          if (k >= 1) { bmp.close(); return await blobToDataUrl(blob); }
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+          c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+          let d = c.toDataURL('image/webp', 0.85);
+          if (!d.startsWith('data:image/webp')) d = c.toDataURL('image/png');
+          return d;
+        } catch (e) { return null; }
+        finally { done++; toast(`Embedding images… ${done}/${cache.size + scaled.size}`); }
+      })());
+    }
+    return scaled.get(key);
+  };
   const absOf = (u, base) => { try { return new URL(u, base || location.href).href; } catch (e) { return null; } };
   const inlineCssUrls = async (css, base) => {
     const found = new Map();
@@ -57,6 +83,13 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   const live = [...rootEl.querySelectorAll('canvas')];
   await waitCanvases(live);
   const clone = rootEl.cloneNode(true);
+  // emparejar <img> e <image> del clon con los vivos (antes de sustituir canvas) para conocer su tamaño visible
+  const liveOf = new Map();
+  for (const sel of ['img', 'image']) {
+    const a = [...rootEl.querySelectorAll(sel)], b = [...clone.querySelectorAll(sel)];
+    b.forEach((el, i) => liveOf.set(el, a[i]));
+  }
+  const rectOf = el => { const l = liveOf.get(el); return l ? l.getBoundingClientRect() : null; };
   clone.querySelectorAll('canvas').forEach((cv, i) => {
     const src = live[i];
     let data = '';
@@ -96,7 +129,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   const imgs = [...clone.querySelectorAll('img[src]')].filter(i => !i.getAttribute('src').startsWith('data:'));
   await Promise.all(imgs.map(async i => {
     const abs = absOf(i.getAttribute('src'));
-    const d = abs ? await fetchData(abs) : null;
+    const d = abs ? await fetchScaled(abs, rectOf(i)) : null;
     if (d) i.setAttribute('src', d); else i.removeAttribute('src');
   }));
   // <image> de SVG (href o xlink:href)
@@ -105,7 +138,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     const h = im.getAttribute('href') || im.getAttributeNS(XL, 'href') || im.getAttribute('xlink:href');
     if (!h || h.startsWith('data:')) return;
     const abs = absOf(h);
-    const d = abs ? await fetchData(abs) : null;
+    const d = abs ? await fetchScaled(abs, rectOf(im)) : null;
     im.removeAttribute('href'); im.removeAttributeNS(XL, 'href'); im.removeAttribute('xlink:href');
     if (d) im.setAttribute('href', d);
   }));
