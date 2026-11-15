@@ -580,9 +580,14 @@ class ReportLanes(unittest.TestCase):
             self.assertEqual(t["n"], 3)
             self.assertIn("200", t["note"])
             tot = 0
+            lanes = {r["carril_id"] for r in next(b for b in sec["blocks"] if b.get("kind") == "ganks")["rows"]}
+            self.assertEqual({r["carril_id"] for r in t["rows"]}, lanes)   # una fila por línea, también sin gankeos
             for r in t["rows"]:
                 esperado = 3 * sum(1 for g in ganks if g["team"] == team and g["lane"] == r["carril_id"])
                 self.assertEqual(r["total"], esperado)
+                if not esperado:
+                    self.assertEqual((r["from_1"], r["from_3"], r["from_4"], r["kills"], r["m1_3"]), (0, 0, 0, 0, 0))
+                    self.assertIsNone(r["heroes"])
                 self.assertEqual(r["m1_3"] + r["m3_5"] + r["m5_7"] + r["m7_10"], r["total"])
                 self.assertGreaterEqual(r["from_1"] + r["from_3"] + r["from_4"], r["total"])
                 tot += r["total"]

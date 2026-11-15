@@ -158,7 +158,7 @@ def fase_lineas(ctx):
                                {"key": "made_min", "label": "Earliest time", "fmt": "mmss"},
                                {"key": "made_heroes", "label": "Own heroes who gank most", "fmt": "heroes", "ids": "made_hero_ids"}],
                    "rows": grows})
-    blocks.extend(_gank_detail(ctx, ln, demo_n))
+    blocks.extend(_gank_detail(ctx, ln, demo_n, sorted(lane_m)))
     return blocks
 
 
@@ -166,7 +166,7 @@ def fase_lineas(ctx):
 _BANDS = (("m1_3", 60, 180), ("m3_5", 180, 300), ("m5_7", 300, 420), ("m7_10", 420, 601))
 
 
-def _gank_detail(ctx, ln, demo_n):
+def _gank_detail(ctx, ln, demo_n, lanes):
     """Dos tablas con todos los gankeos (>= 200 de daño o una muerte) por línea atacada, origen y minuto."""
     hechos, sufridos = defaultdict(list), defaultdict(list)   # carril atacado -> [(gank, hero_of)]
     for m in ctx.matches:
@@ -182,13 +182,13 @@ def _gank_detail(ctx, ln, demo_n):
     note = ("Gank = a hero from another lane deals 200+ damage or gets a kill on a player in the lane, "
             f"between min 1 and 10. Counts only matches with demo ({demo_n}). "
             "From = lane each ganker came from (a gank can come from two lanes). "
-            "Heroes = gankers, most frequent first.")
+            "Heroes = gankers, most frequent first (top 5).")
     out = []
     for kind, title, data in (("ganks_made_detail", "Ganks they make, by attacked lane", hechos),
                               ("ganks_suffered_detail", "Ganks they suffer, by lane", sufridos)):
         rows = []
-        for lane in sorted(data):
-            items = data[lane]
+        for lane in lanes:   # una fila por línea: un cero real también es dato
+            items = data.get(lane, [])
             row = {"carril_id": lane, "total": len(items)}
             for src in (1, 3, 4):
                 row[f"from_{src}"] = sum(1 for g, _ in items if any(k["from_lane"] == src for k in g["gankers"]))
