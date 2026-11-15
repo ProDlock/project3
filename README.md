@@ -4,6 +4,7 @@ Herramienta local (solo en tu ordenador) para:
 
 1. **Scouting de jugadores**: leaderboard de una región, stats del último mes por jugador y héroe, roles, equipos, libres, notas de contacto, climbers y dúos.
 2. **Análisis de partidas y equipos**: partidas por ID o JSON, objetivos, Midboss, minimapa, explorador de todos los campos e **informe estadístico de un equipo** a partir de N partidas.
+   - **Descarga del informe en HTML**: el botón «Download HTML» del informe guarda un único archivo autocontenido (imágenes, fuentes, estilos y mapas incrustados) que se abre sin el servidor.
    - **Mapa de calor por jugador desde el minuto 10**: en la pestaña «Players» de una partida y en la sección Players del informe de equipo.
 
 **La interfaz web está toda en inglés** (este README y HANDOFF.md siguen en español, son para quien desarrolla). Datos: [deadlock-api.com](https://api.deadlock-api.com/docs).
