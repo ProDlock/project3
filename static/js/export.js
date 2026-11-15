@@ -24,20 +24,46 @@ function canvasHasContent(c) {
   } catch (e) { return true; } // canvas contaminado: no se puede comprobar, se exporta tal cual
 }
 
-// los mapas se dibujan cuando carga su imagen: esperar a que ningún canvas esté en blanco
-async function waitCanvases(canvases, maxMs = 5000) {
+// los mapas se dibujan cuando carga su imagen: esperar a que ningún canvas (con tamaño) esté en blanco;
+// se corta al agotar el tiempo o si el número de canvas con contenido no cambia en 3 sondeos seguidos
+async function waitCanvases(rootEl, maxMs = 5000) {
   const t0 = Date.now();
-  while (Date.now() - t0 < maxMs && !canvases.every(canvasHasContent)) await new Promise(r => setTimeout(r, 150));
+  let last = -1, same = 0;
+  while (Date.now() - t0 < maxMs) {
+    const cs = [...rootEl.querySelectorAll('canvas')].filter(c => c.width && c.height);
+    const filled = cs.filter(canvasHasContent).length;
+    if (filled === cs.length) return;
+    same = filled === last ? same + 1 : 0; last = filled;
+    if (same >= 3) return;
+    await new Promise(r => setTimeout(r, 150));
+  }
 }
 
+const REMOVE_TAGS = 'iframe, object, embed, base, link, meta, foreignObject, animate, set';
+const SAFE_URL = /^(#|data:image\/|data:font\/|https?:\/\/(?!localhost|127\.))/i;
+
 export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } = {}) {
+  let done = 0, total = 0;
+  const failed = new Set();
+  const progress = () => toast(`Embedding images… ${done}/${total}`);
+  // como mucho 6 descargas a la vez
+  let active = 0; const queue = [];
+  const limit = fn => new Promise((resolve, reject) => {
+    const run = () => { active++; fn().then(resolve, reject).finally(() => { active--; if (queue.length) queue.shift()(); }); };
+    active < 6 ? run() : queue.push(run);
+  });
+  const blobs = new Map(); // URL absoluta -> Promise<Blob>, una descarga por URL
+  const getBlob = abs => {
+    if (!blobs.has(abs)) blobs.set(abs, limit(async () => { const r = await fetch(abs); if (!r.ok) throw new Error(r.status); return r.blob(); }));
+    return blobs.get(abs);
+  };
+  const tracked = (key, fn) => {
+    total++;
+    return fn().catch(() => { failed.add(key); return null; }).then(v => { done++; progress(); return v; });
+  };
   const cache = new Map(); // URL absoluta -> Promise<data: URL | null>
-  let done = 0;
   const fetchData = (abs) => {
-    if (!cache.has(abs)) {
-      cache.set(abs, fetch(abs).then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); }).then(blobToDataUrl).catch(() => null)
-        .then(v => { done++; toast(`Embedding images… ${done}/${cache.size}`); return v; }));
-    }
+    if (!cache.has(abs)) cache.set(abs, tracked(abs, async () => blobToDataUrl(await getBlob(abs))));
     return cache.get(abs);
   };
   const scaled = new Map(); // abs|T -> Promise<data: URL | null>
@@ -46,23 +72,21 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     const T = rect && (rect.width || rect.height) ? Math.min(256, Math.ceil(Math.max(rect.width, rect.height) * 2)) : 256;
     const key = abs + '|' + T;
     if (!scaled.has(key)) {
-      scaled.set(key, (async () => {
+      scaled.set(key, tracked(abs, async () => {
+        const blob = await getBlob(abs);
+        if (/svg/.test(blob.type) || /\.svg(\?|$)/i.test(abs)) return blobToDataUrl(blob);
+        const bmp = await createImageBitmap(blob);
         try {
-          const r = await fetch(abs); if (!r.ok) throw new Error(r.status);
-          const blob = await r.blob();
-          if (/svg/.test(blob.type) || /\.svg(\?|$)/i.test(abs)) return await blobToDataUrl(blob);
-          const bmp = await createImageBitmap(blob);
           const k = T / Math.max(bmp.width, bmp.height);
-          if (k >= 1) { bmp.close(); return await blobToDataUrl(blob); }
+          if (k >= 1) return await blobToDataUrl(blob);
           const c = document.createElement('canvas');
           c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
-          c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close();
+          c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
           let d = c.toDataURL('image/webp', 0.85);
           if (!d.startsWith('data:image/webp')) d = c.toDataURL('image/png');
           return d;
-        } catch (e) { return null; }
-        finally { done++; toast(`Embedding images… ${done}/${cache.size + scaled.size}`); }
-      })());
+        } finally { bmp.close(); }
+      }));
     }
     return scaled.get(key);
   };
@@ -80,8 +104,10 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   };
 
   toast('Preparing report…');
+  await waitCanvases(rootEl);
+  // consultar los elementos vivos justo antes de clonar (mismo orden que en el clon)
   const live = [...rootEl.querySelectorAll('canvas')];
-  await waitCanvases(live);
+  const liveSelects = [...rootEl.querySelectorAll('select')];
   const clone = rootEl.cloneNode(true);
   // emparejar <img> e <image> del clon con los vivos (antes de sustituir canvas) para conocer su tamaño visible
   const liveOf = new Map();
@@ -92,6 +118,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   const rectOf = el => { const l = liveOf.get(el); return l ? l.getBoundingClientRect() : null; };
   clone.querySelectorAll('canvas').forEach((cv, i) => {
     const src = live[i];
+    if (!src) { cv.remove(); return; }
     let data = '';
     try {
       data = src.toDataURL('image/webp', 0.85);
@@ -107,7 +134,13 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     img.style.height = 'auto';
     cv.replaceWith(img);
   });
-  clone.querySelectorAll('.no-print, .no-export, script, input, select, textarea').forEach(x => x.remove());
+  // los selectores se sustituyen por el texto de la opción elegida
+  clone.querySelectorAll('select').forEach((sel, i) => {
+    const o = liveSelects[i] && liveSelects[i].selectedOptions[0];
+    const sp = document.createElement('span'); sp.textContent = o ? o.textContent : '';
+    sel.replaceWith(sp);
+  });
+  clone.querySelectorAll('.no-print, .no-export, script, input, textarea').forEach(x => x.remove());
   // los botones con contenido (cabeceras ordenables, nombres) pasan a <span> conservando hijos y clases
   clone.querySelectorAll('button').forEach(b => {
     const sp = document.createElement('span');
@@ -122,7 +155,7 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     if (x.tagName === 'IMG') { x.removeAttribute('loading'); x.removeAttribute('decoding'); }
     if (x.tagName === 'A') {
       const h = x.getAttribute('href') || '';
-      if (h.startsWith('/') || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(h)) x.removeAttribute('href');
+      if (h.startsWith('#') || h.startsWith('/') || /^https?:\/\/(localhost|127\.0\.0\.1)/.test(h)) x.removeAttribute('href');
     }
   });
 
@@ -145,6 +178,20 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   }));
   for (const x of clone.querySelectorAll('[style*="url("]')) x.setAttribute('style', await inlineCssUrls(x.getAttribute('style'), location.href));
 
+  // lista de permitidos: etiquetas y URLs seguras, nada ejecutable ni que apunte a la app
+  clone.querySelectorAll(REMOVE_TAGS).forEach(x => x.remove());
+  clone.querySelectorAll('*').forEach(x => {
+    if (x.localName === 'use') {
+      const h = x.getAttribute('href') || x.getAttribute('xlink:href') || '';
+      if (!h.startsWith('#')) { x.remove(); return; }
+    }
+    for (const a of [...x.attributes]) {
+      const nm = a.name.toLowerCase();
+      if (/^on/.test(nm) || ['srcset', 'srcdoc', 'formaction', 'poster'].includes(nm)) x.removeAttribute(a.name);
+      else if (['href', 'xlink:href', 'src'].includes(nm) && !SAFE_URL.test(a.value.trim())) x.removeAttribute(a.name);
+    }
+  });
+
   // hojas de estilo
   let css = '';
   for (const sheet of document.styleSheets) {
@@ -163,6 +210,6 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const slug = (team || 'report').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
   downloadBlob(`deadlock-report-${slug}-${new Date().toISOString().slice(0, 10)}.html`, blob);
-  toast(`HTML downloaded (${(blob.size / 1048576).toFixed(1)} MB)`);
+  toast(`HTML downloaded (${(blob.size / 1048576).toFixed(1)} MB)` + (failed.size ? ` · ${failed.size} assets could not be embedded` : ''), failed.size > 0);
   return { bytes: blob.size, html };
 }
