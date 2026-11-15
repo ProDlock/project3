@@ -60,7 +60,10 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   clone.querySelectorAll('canvas').forEach((cv, i) => {
     const src = live[i];
     let data = '';
-    try { data = src.toDataURL('image/png'); } catch (e) { /* canvas contaminado */ }
+    try {
+      data = src.toDataURL('image/webp', 0.85);
+      if (!data.startsWith('data:image/webp')) data = src.toDataURL('image/jpeg', 0.85);
+    } catch (e) { /* canvas contaminado */ }
     const img = document.createElement('img');
     if (data) img.src = data;
     img.alt = src.getAttribute('aria-label') || '';
@@ -71,7 +74,15 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     img.style.height = 'auto';
     cv.replaceWith(img);
   });
-  clone.querySelectorAll('.no-print, script, button, input, select, textarea').forEach(x => x.remove());
+  clone.querySelectorAll('.no-print, script, input, select, textarea').forEach(x => x.remove());
+  // los botones con contenido (cabeceras ordenables, nombres) pasan a <span> conservando hijos y clases
+  clone.querySelectorAll('button').forEach(b => {
+    const sp = document.createElement('span');
+    if (b.className) sp.className = b.className;
+    if (b.getAttribute('style')) sp.setAttribute('style', b.getAttribute('style'));
+    sp.append(...b.childNodes);
+    b.replaceWith(sp);
+  });
   clone.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
   clone.querySelectorAll('*').forEach(x => {
     for (const a of [...x.attributes]) if (/^on/i.test(a.name)) x.removeAttribute(a.name);
@@ -87,6 +98,16 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
     const abs = absOf(i.getAttribute('src'));
     const d = abs ? await fetchData(abs) : null;
     if (d) i.setAttribute('src', d); else i.removeAttribute('src');
+  }));
+  // <image> de SVG (href o xlink:href)
+  const XL = 'http://www.w3.org/1999/xlink';
+  await Promise.all([...clone.querySelectorAll('image')].map(async im => {
+    const h = im.getAttribute('href') || im.getAttributeNS(XL, 'href') || im.getAttribute('xlink:href');
+    if (!h || h.startsWith('data:')) return;
+    const abs = absOf(h);
+    const d = abs ? await fetchData(abs) : null;
+    im.removeAttribute('href'); im.removeAttributeNS(XL, 'href'); im.removeAttribute('xlink:href');
+    if (d) im.setAttribute('href', d);
   }));
   for (const x of clone.querySelectorAll('[style*="url("]')) x.setAttribute('style', await inlineCssUrls(x.getAttribute('style'), location.href));
 
@@ -106,8 +127,8 @@ export async function exportReportHtml(rootEl, { team = '', n = 0, title = '' } 
   const html = `<!doctype html>\n<html${attr('lang')}${attr('class')}${attr('data-theme')}>\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${esc(docTitle)}</title>\n<style>\n${css}\n</style>\n</head>\n<body${document.body.className ? ` class="${esc(document.body.className)}"` : ''}>\n<p class="muted small">${esc(docTitle)} · ${esc(n)} matches · exported ${esc(new Date().toISOString().slice(0, 10))}</p>\n<div${rootEl.id ? ` id="${esc(rootEl.id)}"` : ''}${rootEl.className ? ` class="${esc(rootEl.className)}"` : ''}>${clone.innerHTML}</div>\n</body>\n</html>\n`;
 
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const slug = (team || 'report').replace(/[^\w-]+/g, '_');
-  downloadBlob(`report_${slug}_${new Date().toISOString().slice(0, 10)}.html`, blob);
+  const slug = (team || 'report').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'report';
+  downloadBlob(`deadlock-report-${slug}-${new Date().toISOString().slice(0, 10)}.html`, blob);
   toast(`HTML downloaded (${(blob.size / 1048576).toFixed(1)} MB)`);
   return { bytes: blob.size, html };
 }
