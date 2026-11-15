@@ -128,8 +128,28 @@ class LanePhase(unittest.TestCase):
                                if v in d["slots"] and self.lane[a] == self.lane[v])
                 self.assertEqual(d["dmg_taken_lane"], exp_lane)
 
+    def _oracle_first_gank(self, ln, tm):
+        """Primer gankeo sufrido por el equipo `tm` en la línea `ln`, calculado desde los eventos crudos con la regla
+        completa: episodios por atacante (huecos < 30 s) con >= 200 de daño o alguna kill."""
+        evs = [(t, a, d, 0) for t, a, v, d in self._timed()
+               if d > 0 and t >= 60 and self.lane[v] == ln and self.team[v] == tm and self.lane[a] != ln]
+        evs += [(k["t"], k["killer_slot"], 0, 1) for k in matches.deaths(self.mi)
+                if k["killer_slot"] is not None and k["t"] is not None and 60 <= k["t"] <= 600
+                and self.team[k["victim_slot"]] == tm and self.lane[k["victim_slot"]] == ln
+                and self.team[k["killer_slot"]] != tm and self.lane[k["killer_slot"]] != ln]
+        first, by_att = [], {}
+        for t, a, d, kill in sorted(evs):
+            ep = by_att.get(a)
+            if ep is None or t - ep["last"] >= 30:
+                ep = by_att[a] = {"start": t, "last": t, "dmg": 0, "kills": 0}
+                first.append(ep)
+            ep["last"] = t
+            ep["dmg"] += d
+            ep["kills"] += kill
+        ok = [ep["start"] for ep in first if ep["dmg"] >= 200 or ep["kills"]]
+        return round(min(ok)) if ok else None
+
     def test_first_gank_is_cross_lane_and_after_60(self):
-        kills = {(k["t"], k["killer_slot"], k["victim_slot"]) for k in matches.deaths(self.mi)}
         seen = 0
         for ln, teams in self.res["lanes"].items():
             for tm, d in teams.items():
@@ -141,11 +161,7 @@ class LanePhase(unittest.TestCase):
                 self.assertEqual(self.lane[g["victim_slot"]], int(ln))
                 self.assertIn(g["victim_slot"], d["slots"])
                 self.assertTrue(60 <= g["t"] <= 600)
-                earlier = [t for t, a, v, x in self._timed()
-                           if x > 0 and t >= 60 and v in d["slots"] and self.lane[a] != int(ln)]
-                earlier += [k[0] for k in kills if k[2] in d["slots"] and k[1] is not None
-                            and self.team[k[1]] != int(tm) and self.lane[k[1]] != int(ln) and 60 <= k[0] <= 600]
-                self.assertEqual(g["t"], round(min(earlier)))
+                self.assertEqual(g["t"], self._oracle_first_gank(int(ln), int(tm)))
                 # el gankeo hecho del rival en esa línea es el mismo evento
                 self.assertEqual(self.res["lanes"][ln][str(1 - int(tm))]["first_gank_made"], g)
         self.assertGreater(seen, 0)
@@ -210,10 +226,18 @@ class LanePhase(unittest.TestCase):
         e1 = next(e for e in eps if e["att"] == 1 and 8 in e["victims"])
         self.assertEqual(e1["victims"], {7, 8})
 
-    def test_player_gank_counts_are_episodes(self):
-        self.assertEqual(sum(1 for _ in self._timed()) > 0, True)
+    def test_player_gank_counts_are_merged_ganks(self):
+        self.assertTrue(any(True for _ in self._timed()))
         self.assertLess(self.res["players"]["2"]["ganks_made"], 19)
         self.assertGreater(self.res["players"]["2"]["ganks_made"], 0)
+
+    def test_player_counters_match_ganks_list(self):
+        ganks = self.res["ganks"]
+        self.assertTrue(ganks)
+        for slot, p in self.res["players"].items():
+            s = int(slot)
+            self.assertEqual(p["ganks_made"], sum(1 for g in ganks if any(k["slot"] == s for k in g["gankers"])), slot)
+            self.assertEqual(p["ganks_suffered"], sum(1 for g in ganks if s in g["victims"]), slot)
 
     def test_deaths_kills_before_600(self):
         ds = [d for d in matches.deaths(self.mi) if d["t"] <= 600]
@@ -274,6 +298,10 @@ class LaneGanks(unittest.TestCase):
             b += 1
         return b
 
+    def _sec(self, t):
+        """Segundo (redondeado) del evento generado para el segundo pedido."""
+        return round(demo.game_seconds_from_tick(self._b(t) * 320, self.rules))
+
     def _row(self, t, att, vic, dmg):
         return {"att": self.acc[att], "vic": self.acc[vic], "b": self._b(t), "dmg": dmg}
 
@@ -327,11 +355,21 @@ class LaneGanks(unittest.TestCase):
         g = res["ganks"][0]
         self.assertEqual({x["slot"]: x["from_lane"] for x in g["gankers"]}, {self.a1: 1, self.a3: 3})
         self.assertEqual(g["dmg"], 550)
-        self.assertEqual(g["t"], self.a_t(res, 100))
-        self.assertGreaterEqual(g["t_end"], g["t"])
+        self.assertEqual(g["t"], self._sec(100))
+        self.assertEqual(g["t_end"], self._sec(120))
+        # un gankeo fusionado cuenta una vez para cada ganker y para la víctima
+        self.assertEqual((res["players"][str(self.a1)]["ganks_made"], res["players"][str(self.a3)]["ganks_made"],
+                          res["players"][str(v)]["ganks_suffered"]), (1, 1, 1))
 
-    def a_t(self, res, t):
-        return round(demo.game_seconds_from_tick(self._b(t) * 320, self.rules))
+    def test_merge_boundary_just_under_30s_is_one_gank_30s_is_two(self):
+        v = self.vics[0]
+        # el demo tiene resolución de 5 s: 25 s es lo más cerca de 30 por debajo
+        res = self._run([self._row(100, self.a1, v, 300), self._row(125, self.a3, v, 300)])
+        self.assertEqual(len(res["ganks"]), 1)
+        self.assertEqual(res["players"][str(v)]["ganks_suffered"], 1)
+        res = self._run([self._row(100, self.a1, v, 300), self._row(130, self.a3, v, 300)])
+        self.assertEqual(len(res["ganks"]), 2)
+        self.assertEqual(res["players"][str(v)]["ganks_suffered"], 2)
 
     def test_same_attacker_40s_apart_is_two_ganks(self):
         v = self.vics[0]

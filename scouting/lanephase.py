@@ -107,7 +107,8 @@ def _demo_usable(mi, lane_rows):
 
 
 def lane_phase(mi, lane_rows=None, rules=None, paths=None, tick_limit=None):
-    """Resumen por partida. ganks_made/ganks_suffered por jugador cuentan EPISODIOS (ver _episodes), no eventos.
+    """Resumen por partida. ganks_made/ganks_suffered por jugador cuentan GANKEOS de la lista `ganks` (ya fusionados, ver _merge_ganks):
+    los gankeos en los que el jugador es ganker / víctima; coinciden siempre con esa lista.
     Con las líneas no válidas: lanes {}, source None, lane/ganks None; el daño por jugador se mantiene.
 
     `tick_limit` = límite de tick con el que se consultaron `lane_rows` (por defecto el antiguo, 48000). Si con las
@@ -184,9 +185,6 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None, tick_limit=None):
             e["vlane"] = lane_of[e["victim_slot"]]
         eps = [ep for ep in _episodes(gank_ev) if _gank_ok(ep)]
         for ep in eps:
-            ganks_made[ep["att"]] += 1
-            for v in ep["victims"]:
-                ganks_suffered[v] += 1
             for e in ep["events"]:
                 pe = _public(e)
                 a, v = e["attacker_slot"], e["victim_slot"]
@@ -195,6 +193,12 @@ def lane_phase(mi, lane_rows=None, rules=None, paths=None, tick_limit=None):
                 k = (lane_of[v], team[v])
                 suffered[k] = _better(suffered.get(k), pe)
         ganks = _merge_ganks(eps, team, lane_of, ps)
+        # los contadores por jugador salen de la lista fusionada: así coinciden con las filas que se muestran
+        for g in ganks:
+            for k in g["gankers"]:
+                ganks_made[k["slot"]] += 1
+            for v in g["victims"]:
+                ganks_suffered[v] += 1
 
     def tot(d, slots, on):
         if not on or any(d[s] is None for s in slots):

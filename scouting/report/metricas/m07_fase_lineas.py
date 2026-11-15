@@ -147,7 +147,7 @@ def fase_lineas(ctx):
     if gank_cards:
         blocks.append({"type": "cards", "kind": "gank_cards", "items": gank_cards})
     blocks.append({"type": "table", "kind": "ganks", "title": "First gank by lane", "n": demo_n,
-                   "note": f"Gank = damage or kill on a player from another lane after min 1. Counts only matches with demo ({demo_n} of {valid} with valid lanes): "
+                   "note": f"Gank = a hero from another lane deals 200+ damage or gets a kill on a player in the lane, between min 1 and 10. Counts only matches with demo ({demo_n} of {valid} with valid lanes): "
                            "without demo, ganks are not available. Mean and earliest time over the matches where it happens; "
                            "the heroes are the ones who do it most often.",
                    "columns": [{"key": "carril_id", "label": "Lane", "fmt": "lane"}, {"key": "n", "label": "Matches"},
@@ -168,17 +168,16 @@ _BANDS = (("m1_3", 60, 180), ("m3_5", 180, 300), ("m5_7", 300, 420), ("m7_10", 4
 
 def _gank_detail(ctx, ln, demo_n, lanes):
     """Dos tablas con todos los gankeos (>= 200 de daño o una muerte) por línea atacada, origen y minuto."""
-    hechos, sufridos = defaultdict(list), defaultdict(list)   # carril atacado -> [(gank, hero_of)]
+    hechos, sufridos = defaultdict(list), defaultdict(list)   # carril atacado -> [gank]
     for m in ctx.matches:
         lp = m.lane_phase
         if not lp["valid"] or lp["source"] != "demo" or lp.get("ganks") is None:
             continue
-        hero_of = {s: p.get("hero_id") for s, p in M.players(m.mi).items()}
         for g in lp["ganks"]:
             if g["team"] == m.our:
-                hechos[g["lane"]].append((g, hero_of))
+                hechos[g["lane"]].append(g)
             elif g["team"] == m.their:
-                sufridos[g["lane"]].append((g, hero_of))
+                sufridos[g["lane"]].append(g)
     note = ("Gank = a hero from another lane deals 200+ damage or gets a kill on a player in the lane, "
             f"between min 1 and 10. Counts only matches with demo ({demo_n}). "
             "From = lane each ganker came from (a gank can come from two lanes). "
@@ -191,11 +190,11 @@ def _gank_detail(ctx, ln, demo_n, lanes):
             items = data.get(lane, [])
             row = {"carril_id": lane, "total": len(items)}
             for src in (1, 3, 4):
-                row[f"from_{src}"] = sum(1 for g, _ in items if any(k["from_lane"] == src for k in g["gankers"]))
+                row[f"from_{src}"] = sum(1 for g in items if any(k["from_lane"] == src for k in g["gankers"]))
             for key, lo, hi in _BANDS:
-                row[key] = sum(1 for g, _ in items if lo <= g["t"] < hi)
-            row["kills"] = sum(g["kills"] for g, _ in items)
-            heroes = Counter(hero_of.get(k["slot"]) for g, hero_of in items for k in g["gankers"])
+                row[key] = sum(1 for g in items if lo <= g["t"] < hi)
+            row["kills"] = sum(g["kills"] for g in items)
+            heroes = Counter(k["hero_id"] for g in items for k in g["gankers"])
             row["heroes"] = _top(heroes, ctx, 5)
             row["hero_ids"] = _top_ids(heroes, 5)
             rows.append(row)

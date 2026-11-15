@@ -497,7 +497,8 @@ function faseLineas(root, m, tname) {
   root.append(el('h3', {}, 'Ganks'));
   const gl = lp.ganks;
   if (lp.source !== 'demo' || gl == null) { root.append(el('div', { class: 'unavailable block' }, 'Ganks need the demo.')); return; }
-  if (!gl.length) { root.append(el('p', { class: 'muted' }, 'No ganks in this match.')); return; }
+  const gankNote = el('p', { class: 'muted small' }, 'A gank is a hero that deals at least 200 damage, or gets a kill, on a lane other than its own, in minutes 1–10 (demo only).');
+  if (!gl.length) { root.append(el('p', { class: 'muted' }, 'No ganks in this match.'), gankNote); return; }
   const heroes = slots => el('span', {}, (slots || []).map(s => el('span', { style: { marginRight: '10px', display: 'inline-block' } }, heroBit(s))));
   const rows = gl.map(g => ({
     ...g,
@@ -513,7 +514,7 @@ function faseLineas(root, m, tname) {
     { key: 'dmg', label: 'Damage', fmt: 'int' },
     { key: 'kills', label: 'Kills', fmt: 'int' },
   ], rows, { sortKey: 't', asc: true }));
-  root.append(el('p', { class: 'muted small' }, 'A gank is a hero that deals at least 200 damage, or gets a kill, on a lane other than its own, in minutes 1–10 (demo only).'));
+  root.append(gankNote);
 }
 
 function jugadores(root, m, tname) {
