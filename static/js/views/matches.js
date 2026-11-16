@@ -493,6 +493,28 @@ function faseLineas(root, m, tname) {
   };
   for (const l of laneIds) root.append(el('section', { class: 'lp-lane' }, el('h3', {}, laneChip(l, m.lanes)), el('div', { class: 'grid2' }, card(l, 0), card(l, 1))));
   root.append(el('p', { class: 'muted small' }, 'Lanes are assigned by each player’s position, not by map side. “–” = no data.'));
+  // tabla de gankeos (solo con demo)
+  root.append(el('h3', {}, 'Ganks'));
+  const gl = lp.ganks;
+  if (lp.source !== 'demo' || gl == null) { root.append(el('div', { class: 'unavailable block' }, 'Ganks need the demo.')); return; }
+  const gankNote = el('p', { class: 'muted small' }, 'A gank is a hero that deals at least 200 damage, or gets a kill, on a lane other than its own, in minutes 1–10 (demo only).');
+  if (!gl.length) { root.append(el('p', { class: 'muted' }, 'No ganks in this match.'), gankNote); return; }
+  const heroes = slots => el('span', {}, (slots || []).map(s => el('span', { style: { marginRight: '10px', display: 'inline-block' } }, heroBit(s))));
+  const rows = gl.map(g => ({
+    ...g,
+    fromLanes: [...new Set((g.gankers || []).map(x => x.from_lane).filter(l => l != null))],
+  }));
+  root.append(dataTable([
+    { key: 't', label: 'Minute', render: r => minOf(r.t) ?? '–', sort: r => r.t },
+    { key: 'team', label: 'Team', render: r => teamTag(r.team, tname) },
+    { key: 'gankers', label: 'Gankers', sortable: false, render: r => heroes((r.gankers || []).map(x => x.slot)) },
+    { key: 'from', label: 'From', sortable: false, render: r => r.fromLanes.length ? el('span', {}, r.fromLanes.map(l => laneChip(l, m.lanes))) : el('span', { class: 'muted' }, '–') },
+    { key: 'lane', label: 'Lane attacked', render: r => r.lane == null ? el('span', { class: 'muted' }, '–') : laneChip(r.lane, m.lanes), sort: r => r.lane },
+    { key: 'victims', label: 'Victims', sortable: false, render: r => heroes(r.victims) },
+    { key: 'dmg', label: 'Damage', fmt: 'int' },
+    { key: 'kills', label: 'Kills', fmt: 'int' },
+  ], rows, { sortKey: 't', asc: true }));
+  root.append(gankNote);
 }
 
 function jugadores(root, m, tname) {
